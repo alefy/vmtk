@@ -67,6 +67,7 @@ SET(SCRIPTS_SRCS
   vmtkmeshboundaryinspector.py
   vmtkmeshbranchclipper.py
   vmtkmeshclipper.py
+  vmtkmeshcomponentsfromvector.py
   vmtkmeshconnectivity.py
   vmtkmeshcutter.py
   vmtkmeshdatareader.py

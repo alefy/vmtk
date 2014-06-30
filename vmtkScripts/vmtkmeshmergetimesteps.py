@@ -24,6 +24,7 @@ import os
 import vtkvmtk
 import vmtkmeshreader
 import vmtkmeshvectorfromcomponents
+import vmtkmeshcomponentsfromvector
 import pypes
 
 vmtkmeshmergetimesteps = 'vmtkMeshMergeTimesteps'
@@ -41,6 +42,8 @@ class vmtkMeshMergeTimesteps(pypes.pypeScript):
         self.LastTimeStep = None
         self.IntervalTimeStep = 1
         self.VelocityVector = 0
+        self.VelocityFromVector = 0
+        self.VectorArrayName = 'velocity'
         self.Pressure = 0
         self.PressureArrayName = 'p'
         self.Wsr = 0
@@ -58,6 +61,8 @@ class vmtkMeshMergeTimesteps(pypes.pypeScript):
             ['IntervalTimeStep','intervalstep','int',1,'(0,)'],
             ['VelocityComponentsArrayNames','components','str',-1,'',''],
             ['VelocityVector','velocityvector','bool',1,'','velocity vector instead of components'],
+            ['VelocityFromVector','velocityfromvector','bool',1,'','Import velocity from velocity vector'],
+            ['VectorArrayName','vectorarrayname','str',1,'','name of the velocity vector'],
             ['Pressure','pressure','bool',1,'','pressure array'],
             ['PressureArrayName','pressurearrayname','str',1,'','name of the pressure array'],
             ['Wsr','wallshearrate','bool',1,'','wallshearrate array'],
@@ -99,9 +104,9 @@ class vmtkMeshMergeTimesteps(pypes.pypeScript):
         w_name = self.VelocityComponentsArrayNames.split(' ')[2]
         
         if self.Wsr:
-        	taux_name = self.WsrComponentsArrayNames.split(' ')[0]
-        	tauy_name = self.WsrComponentsArrayNames.split(' ')[1]
-        	tauz_name = self.WsrComponentsArrayNames.split(' ')[2]
+            taux_name = self.WsrComponentsArrayNames.split(' ')[0]
+            tauy_name = self.WsrComponentsArrayNames.split(' ')[1]
+            tauz_name = self.WsrComponentsArrayNames.split(' ')[2]
         
         field = vtk.vtkFieldData()
         field.AllocateArrays(1)
@@ -110,16 +115,18 @@ class vmtkMeshMergeTimesteps(pypes.pypeScript):
         timesteps.SetName("timesteps")
         i = 0
         for step in timeIndexList:
+            print step
             if (self.Pattern%step).replace(' ','0') in fileList:
                 timesteps.InsertTuple1(i, step)
                 i+=1
                 
                 fileName = (self.Pattern%step).replace(' ','0')
+                print fileName
                 timeIndex = step
                 reader.InputFileName = os.path.abspath(os.path.join(self.InputDirectoryName,fileName))
                 reader.Execute()
                 mesh = reader.Mesh
-                
+
                 if step == self.FirstTimeStep:
                     mesh.CopyStructure(mesh)
                     self.Mesh = mesh
@@ -130,36 +137,55 @@ class vmtkMeshMergeTimesteps(pypes.pypeScript):
                     self.Mesh.GetPointData().AddArray(p)
                 
                 if self.Wsr:
-                	taux = mesh.GetPointData().GetArray(taux_name)
-                	taux.SetName(taux_name+str(step))
-                	self.Mesh.GetPointData().AddArray(taux)
-                	
-                	tauy = mesh.GetPointData().GetArray(tauy_name)
-                	tauy.SetName(tauy_name+str(step))
-                	self.Mesh.GetPointData().AddArray(tauy)
-                	
-                	tauz = mesh.GetPointData().GetArray(tauz_name)
-                	tauz.SetName(tauz_name+str(step))
-                	self.Mesh.GetPointData().AddArray(tauz)
-                	            
-                u = mesh.GetPointData().GetArray(u_name)
-                u.SetName(u_name+"_"+str(step))
-                self.Mesh.GetPointData().AddArray(u)
+                    taux = mesh.GetPointData().GetArray(taux_name)
+                    taux.SetName(taux_name+str(step))
+                    self.Mesh.GetPointData().AddArray(taux)
+                    
+                    tauy = mesh.GetPointData().GetArray(tauy_name)
+                    tauy.SetName(tauy_name+str(step))
+                    self.Mesh.GetPointData().AddArray(tauy)
+                    
+                    tauz = mesh.GetPointData().GetArray(tauz_name)
+                    tauz.SetName(tauz_name+str(step))
+                    self.Mesh.GetPointData().AddArray(tauz)
 
-                v = mesh.GetPointData().GetArray(v_name)
-                v.SetName(v_name+"_"+str(step))
-                self.Mesh.GetPointData().AddArray(v)
+                if self.VelocityFromVector:
+                    u_comp_name = u_name+"_"+str(step)
+                    v_comp_name = v_name+"_"+str(step)
+                    w_comp_name = w_name+"_"+str(step)
+                    comp_name = [u_comp_name,v_comp_name,w_comp_name]
+
+                    vel = mesh.GetPointData().GetArray(self.VectorArrayName)
+
+                    numberOfComponents = 3
+
+                    for i in range(numberOfComponents):
+                        vectorArray = vtk.vtkDoubleArray()
+                        vectorArray.SetName(comp_name[i])
+                        vectorArray.SetNumberOfComponents(1)
+                        vectorArray.SetNumberOfTuples(self.Mesh.GetNumberOfPoints())
+                        vectorArray.CopyComponent(0,vel,i)
+                        self.Mesh.GetPointData().AddArray(vectorArray)
+                                                    
+                else:
+                    u = mesh.GetPointData().GetArray(u_name)
+                    u.SetName(u_name+"_"+str(step))
+                    self.Mesh.GetPointData().AddArray(u)
+
+                    v = mesh.GetPointData().GetArray(v_name)
+                    v.SetName(v_name+"_"+str(step))
+                    self.Mesh.GetPointData().AddArray(v)
                 
-                w = mesh.GetPointData().GetArray(w_name)
-                w.SetName(w_name+"_"+str(step))
-                self.Mesh.GetPointData().AddArray(w)
-                                
+                    w = mesh.GetPointData().GetArray(w_name)
+                    w.SetName(w_name+"_"+str(step))
+                    self.Mesh.GetPointData().AddArray(w)
+
                 if self.VelocityVector:
                     vectorFromComponents.Mesh = self.Mesh
                     vectorFromComponents.VectorArrayName = "Velocity_"+str(step)
                     vectorFromComponents.ComponentsArrayNames = [u.GetName(),v.GetName(),w.GetName()]
                     vectorFromComponents.RemoveComponentArrays = True
-                    vectorFromComponents.Execute()
+                    vectorfromcomponents.Execute()
                 
                 if self.WsrVector:
                     vectorFromComponents.Mesh = self.Mesh
